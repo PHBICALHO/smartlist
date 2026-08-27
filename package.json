@@ -1,0 +1,15 @@
+{
+  "name": "smartlist-condor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Consulta o Condor.com.br e mostra em qual loja de Curitiba um produto está mais barato.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "playwright": "^1.47.0"
+  }
+}
