@@ -1,16 +1,14 @@
 # SmartList — Preço Condor Curitiba
 
 Site simples que pesquisa um produto no [condor.com.br](https://www.condor.com.br)
-e mostra em qual loja Condor de Curitiba ele está mais barato, usando o
-recurso de "ver preço loja a loja" do próprio site.
+e mostra em qual loja Condor de Curitiba ele está mais barato.
 
-## Aviso importante
-
-Este código foi escrito **sem conseguir acessar o condor.com.br** (o ambiente
-onde ele foi gerado tem a rede bloqueada). Os seletores usados no scraper
-(`src/config.js` e `src/scraper.js`) são tentativas genéricas — é bem
-possível que algo precise de ajuste na primeira execução. O scraper tem um
-modo de debug feito exatamente para isso (veja abaixo).
+O Condor não tem um botão de "comparar preço entre lojas" num produto — em
+vez disso, o site inteiro reflete o preço da loja selecionada no momento
+(botão "Loja de..." na home). Por isso o scraper troca a loja selecionada
+uma a uma (só as de Curitiba) e refaz a busca do produto em cada uma, para
+depois comparar os preços. Uma busca completa passa por ~10 lojas e leva
+cerca de 1 a 2 minutos.
 
 ## Instalação
 
@@ -26,7 +24,7 @@ npm start
 ```
 
 Abra http://localhost:3000, digite um produto (ex: "arroz 5kg") e clique em
-Buscar.
+Buscar. A busca demora um pouco (percorre todas as lojas de Curitiba).
 
 ## Se der erro / não achar nada
 
@@ -38,32 +36,35 @@ HEADLESS=0 DEBUG=1 npm start
 ```
 
 Depois faça uma busca pelo site. Quando der erro, a mensagem vai dizer em
-qual etapa parou (busca, abrir produto, abrir comparação de lojas, etc.).
-Abra os arquivos em `debug/` (prints e HTML) e me envie — ou você mesmo pode
-ajustar os seletores em `src/config.js`:
+qual etapa parou. Abra os arquivos em `debug/` (prints e HTML) e ajuste os
+seletores em `src/config.js`:
 
-- `SEARCH_INPUT_SELECTORS`: como encontrar o campo de busca da home.
-- `PRODUCT_LINK_SELECTORS`: como encontrar o link de um produto no resultado
-  de busca.
-- `STORE_PRICE_BUTTON_PATTERNS`: o texto do botão "ver preço loja a loja".
+- `SEARCH_INPUT_SELECTORS`: campo de busca do header.
+- `PRODUCT_CARD_SELECTOR`: card de produto na página de resultado de busca.
+- `STORE_BUTTON_SELECTOR` / `STORE_ITEM_SELECTOR` /
+  `STORE_CONFIRM_BUTTON_SELECTOR`: o modal "Selecione uma loja" (só
+  disponível na home) usado para trocar de loja.
 - `CURITIBA_KEYWORDS` / `KNOWN_CURITIBA_STORES`: como identificar se uma
   loja retornada é de Curitiba (o Condor tem lojas em outras cidades do
-  Paraná também). Se os nomes das lojas não vierem com "Curitiba" no texto,
-  preencha `KNOWN_CURITIBA_STORES` com os nomes/bairros das lojas de
-  Curitiba (ex: "Batel", "Cabral", "Água Verde"...).
+  Paraná e até Santa Catarina). O endereço retornado já inclui a cidade, então
+  o filtro padrão (`"curitiba"`) costuma bastar.
+
+O scraper tenta casar o mesmo produto (por nome exato) em todas as lojas; se
+uma loja não tiver o produto exato, ele cai para o primeiro resultado da
+busca naquela loja como aproximação.
 
 ## Estrutura
 
 ```
-server.js          -> servidor Express + endpoint /api/buscar
-src/scraper.js      -> scraping com Playwright (Chromium headless)
-src/config.js        -> seletores e configurações ajustáveis
-public/              -> frontend (HTML/CSS/JS puro)
+server.js       -> servidor Express + endpoint /api/buscar
+src/scraper.js  -> scraping com Playwright (Chromium headless)
+src/config.js   -> seletores e configurações ajustáveis
+public/         -> frontend (HTML/CSS/JS puro)
 ```
 
 ## Uso responsável
 
-O scraper abre uma busca por vez, sem paralelismo nem loop automático —
-é pensado para uso pessoal (comparar preço antes de ir ao mercado), não
-para varrer o catálogo inteiro do Condor. Evite rodar buscas em massa/muito
+O scraper roda uma busca por vez, sem paralelismo nem loop automático — é
+pensado para uso pessoal (comparar preço antes de ir ao mercado), não para
+varrer o catálogo inteiro do Condor. Evite rodar buscas em massa/muito
 frequentes.

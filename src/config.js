@@ -1,10 +1,11 @@
 // Configuração do scraper do Condor.
 //
-// IMPORTANTE: não foi possível abrir o condor.com.br a partir do ambiente
-// onde este código foi gerado (rede bloqueada). Os seletores abaixo são
-// tentativas genéricas/comuns para sites de e-commerce brasileiros.
-// Se o scraper não encontrar algo, rode com DEBUG=1 (veja o README) e
-// ajuste os seletores/padrões aqui usando o HTML salvo em debug/.
+// Confirmado testando ao vivo (rodando localmente): o Condor NÃO tem um
+// botão de "comparar preço loja a loja" num único produto. Em vez disso,
+// existe um seletor de loja global no header (o site inteiro reflete os
+// preços da loja selecionada). Para comparar preços entre lojas, o scraper
+// troca a loja selecionada e refaz a busca do produto para cada loja de
+// Curitiba.
 
 module.exports = {
   BASE_URL: 'https://www.condor.com.br',
@@ -23,10 +24,12 @@ module.exports = {
     /continuar sem informar/i,
     /fechar/i,
     /agora não/i,
+    /estou ciente/i,
   ],
 
-  // Onde procurar o campo de busca na home do Condor.
+  // Campo de busca na home/header do Condor.
   SEARCH_INPUT_SELECTORS: [
+    'input[data-test="search-inp"]',
     'input[type="search"]',
     'input[name="q"]',
     'input#input-busca',
@@ -34,33 +37,30 @@ module.exports = {
     'input[aria-label*="usca" i]',
   ],
 
-  // Como identificar um link de produto na página de resultado de busca.
-  PRODUCT_LINK_SELECTORS: [
-    'a[href*="/produto"]',
-    'a[href*="/p/"]',
-    '[data-testid*="product"] a',
-    '.product-item a',
-    '.product-card a',
-  ],
+  // Card de produto na página de resultado de busca. Cada card é
+  // ".item-product-wrapper" (um <a> sem href, navegação via JS) contendo o
+  // nome e "R$ X,XX" do preço.
+  PRODUCT_CARD_SELECTOR: '.item-product-wrapper',
 
-  // Texto do botão que abre a comparação de preço "loja a loja"
-  // (você mencionou que esse botão existe na página do produto).
-  STORE_PRICE_BUTTON_PATTERNS: [
-    /pre[cç]o.*loja/i,
-    /comparar.*loja/i,
-    /loja a loja/i,
-    /ver.*pre[cç]o.*loja/i,
-    /dispon[ií]vel.*loja/i,
-  ],
+  // Enquanto os produtos carregam via ajax, o Condor mostra skeletons com
+  // essa classe.
+  LOADING_PLACEHOLDER_SELECTOR: '.loading-placeholder',
 
-  // Um nome de loja é considerado "de Curitiba" se contiver qualquer uma
-  // destas palavras (case-insensitive). Ajuste depois de ver os nomes reais
-  // retornados pelo Condor (rode com DEBUG=1).
+  // Botão no header que abre o modal "Selecione uma loja".
+  STORE_BUTTON_SELECTOR: '[data-test="store-btn"]',
+
+  // Cada item da lista de lojas no modal tem um atributo data-store-id.
+  STORE_ITEM_SELECTOR: '[data-store-id]',
+
+  // Botão que confirma a troca de loja dentro do modal.
+  STORE_CONFIRM_BUTTON_SELECTOR: '[data-test="store-confirm-btn"]',
+
+  // Uma loja é considerada "de Curitiba" se o nome OU o endereço contiver
+  // qualquer uma destas palavras (case-insensitive). O endereço retornado
+  // pelo Condor já inclui a cidade (ex: "..., Curitiba - PR, 80520-000").
   CURITIBA_KEYWORDS: ['curitiba'],
 
-  // Lista extra de nomes/bairros de lojas que você sabe que são de
-  // Curitiba, para o caso do Condor não escrever "Curitiba" no nome da loja
-  // (ex: só "Condor Batel", "Condor Cabral"). Preencha depois de conferir
-  // no site real ou no dump de debug.
+  // Lista extra de nomes/bairros de lojas para casos em que o texto não
+  // contenha "Curitiba" explicitamente.
   KNOWN_CURITIBA_STORES: [],
 };
