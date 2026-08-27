@@ -12,12 +12,15 @@
     <p class="subtitulo">Descubra em qual loja Condor de Curitiba um produto está mais barato.</p>
 
     <form id="form-busca">
-      <input type="text" id="produto" placeholder="Ex: arroz 5kg, café, leite integral..." required />
-      <button type="submit">Buscar</button>
+      <input type="text" id="termo" placeholder="Ex: arroz, café, leite integral..." required />
+      <button type="submit">Pesquisar</button>
     </form>
 
     <div id="status"></div>
-    <div id="resultado"></div>
+
+    <div id="produtos" class="grid-produtos"></div>
+
+    <div id="comparacao"></div>
   </main>
 
   <script src="app.js"></script>

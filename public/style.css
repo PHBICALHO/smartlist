@@ -20,7 +20,7 @@ body {
 }
 
 main {
-  max-width: 640px;
+  max-width: 860px;
   margin: 0 auto;
   padding: 48px 20px;
 }
@@ -101,4 +101,63 @@ button:disabled {
   padding: 2px 8px;
   border-radius: 999px;
   margin-left: 8px;
+}
+
+.selo.aviso {
+  background: #d97706;
+}
+
+.grid-produtos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.card-produto {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+  text-align: center;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.card-produto:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+}
+
+.card-produto img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  margin-bottom: 8px;
+}
+
+.card-produto .nome-produto {
+  font-size: 0.8rem;
+  line-height: 1.3;
+  min-height: 2.6em;
+  margin-bottom: 4px;
+  text-transform: capitalize;
+}
+
+.card-produto .preco-produto {
+  font-weight: 700;
+}
+
+.voltar-btn {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+  margin-bottom: 16px;
+}
+
+.produto-alvo {
+  font-weight: 600;
+  margin-bottom: 12px;
+  text-transform: capitalize;
 }

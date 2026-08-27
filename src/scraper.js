@@ -73,33 +73,42 @@ function normalizarPreco(texto) {
   return Number.isNaN(numero) ? null : numero;
 }
 
-async function obterProdutoDaBusca(page, nomeAlvo) {
+// Lista os produtos da página de resultado de busca atual. O nome vem do
+// atributo alt da imagem do produto (mais confiável do que tentar separar
+// preço/unidade/nome do texto visível do card).
+async function listarProdutosDaBusca(page, limite = 30) {
   const cards = page.locator(config.PRODUCT_CARD_SELECTOR);
-  const total = await cards.count();
+  const total = Math.min(await cards.count(), limite);
 
-  let primeiro = null;
+  const produtos = [];
   for (let i = 0; i < total; i++) {
-    const texto = (await cards.nth(i).innerText().catch(() => '')).trim();
-    if (!texto) continue;
+    const card = cards.nth(i);
 
+    const nome = ((await card.locator('img').first().getAttribute('alt').catch(() => null)) || '').trim();
+    if (!nome) continue;
+
+    const texto = (await card.innerText().catch(() => '')).trim();
     const preco = normalizarPreco(texto);
     if (preco === null) continue;
 
-    const nome = texto
-      .replace(PRICE_RE, '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      // remove o rótulo de unidade ("un", "kg"...) que fica colado antes do nome.
-      .replace(/^(un|kg|cx|pct|dz)\b\s*/i, '');
-    if (!nome) continue;
+    const imagem = await card.locator('img').first().getAttribute('src').catch(() => null);
 
-    if (!primeiro) primeiro = { nome, preco };
-    if (nomeAlvo && nome.toLowerCase() === nomeAlvo.toLowerCase()) {
-      return { nome, preco };
-    }
+    produtos.push({ nome, preco, imagem });
   }
 
-  return primeiro;
+  return produtos;
+}
+
+async function obterProdutoDaBusca(page, nomeAlvo) {
+  const produtos = await listarProdutosDaBusca(page);
+  if (produtos.length === 0) return null;
+
+  if (nomeAlvo) {
+    const match = produtos.find((p) => p.nome.toLowerCase() === nomeAlvo.toLowerCase());
+    if (match) return { ...match, aproximado: false };
+  }
+
+  return { ...produtos[0], aproximado: Boolean(nomeAlvo) };
 }
 
 async function abrirSeletorDeLojas(page) {
@@ -169,10 +178,7 @@ function ehLojaDeCuritiba(nome, endereco) {
   return false;
 }
 
-async function buscarPrecosCondor(produto, options = {}) {
-  const { headless = true, debug = false } = options;
-  const debugDir = path.join(__dirname, '..', 'debug');
-
+async function abrirNavegador(headless) {
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext({
     userAgent: config.USER_AGENT,
@@ -180,6 +186,50 @@ async function buscarPrecosCondor(produto, options = {}) {
   });
   const page = await context.newPage();
   page.setDefaultTimeout(config.TIMEOUT_MS);
+  return { browser, page };
+}
+
+// Etapa 1: pesquisa o termo digitado pelo usuário e devolve a lista de
+// produtos encontrados (na loja selecionada por padrão), para o usuário
+// escolher qual é exatamente o produto que ele quer comparar.
+async function pesquisarProdutos(termo, options = {}) {
+  const { headless = true, debug = false } = options;
+  const debugDir = path.join(__dirname, '..', 'debug');
+  const { browser, page } = await abrirNavegador(headless);
+
+  try {
+    await page.goto(config.BASE_URL, { waitUntil: 'domcontentloaded' });
+    await fecharPopups(page);
+    if (debug) await dumpDebug(page, debugDir, '01-home');
+
+    await preencherBusca(page, termo);
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
+    await esperarProdutosCarregarem(page);
+    if (debug) await dumpDebug(page, debugDir, '02-pesquisa');
+
+    const produtos = await listarProdutosDaBusca(page);
+    if (produtos.length === 0) {
+      throw new ScraperError(
+        'Não encontrei nenhum produto para esse termo no Condor. Confira a grafia ou rode com DEBUG=1.'
+      );
+    }
+
+    return { termo, produtos };
+  } catch (err) {
+    if (debug) await dumpDebug(page, debugDir, '99-erro-pesquisa').catch(() => {});
+    throw err;
+  } finally {
+    await browser.close();
+  }
+}
+
+// Etapa 2: dado o nome EXATO de um produto (escolhido a partir do resultado
+// de pesquisarProdutos), percorre as lojas de Curitiba trocando a loja
+// selecionada e refazendo a busca, para comparar o preço em cada uma.
+async function compararPrecoEntreLojas(nomeProduto, options = {}) {
+  const { headless = true, debug = false } = options;
+  const debugDir = path.join(__dirname, '..', 'debug');
+  const { browser, page } = await abrirNavegador(headless);
 
   try {
     await page.goto(config.BASE_URL, { waitUntil: 'domcontentloaded' });
@@ -197,25 +247,24 @@ async function buscarPrecosCondor(produto, options = {}) {
       );
     }
 
-    let nomeProdutoAlvo = null;
     const resultados = [];
 
     for (const loja of lojasCuritiba) {
       await selecionarLoja(page, loja.id);
 
-      await preencherBusca(page, produto);
+      await preencherBusca(page, nomeProduto);
       await page.waitForLoadState('domcontentloaded').catch(() => {});
       await esperarProdutosCarregarem(page);
       if (debug) await dumpDebug(page, debugDir, `03-busca-loja-${loja.id}`);
 
-      const item = await obterProdutoDaBusca(page, nomeProdutoAlvo);
+      const item = await obterProdutoDaBusca(page, nomeProduto);
       if (item) {
-        if (!nomeProdutoAlvo) nomeProdutoAlvo = item.nome;
         resultados.push({
           loja: loja.nome,
           endereco: loja.endereco,
           preco: item.preco,
           produtoEncontrado: item.nome,
+          aproximado: item.aproximado,
         });
       }
     }
@@ -223,17 +272,16 @@ async function buscarPrecosCondor(produto, options = {}) {
     resultados.sort((a, b) => a.preco - b.preco);
 
     return {
-      produto,
-      produtoEncontrado: nomeProdutoAlvo,
+      produto: nomeProduto,
       lojas: resultados,
       maisBarato: resultados[0] || null,
     };
   } catch (err) {
-    if (debug) await dumpDebug(page, debugDir, '99-erro').catch(() => {});
+    if (debug) await dumpDebug(page, debugDir, '99-erro-comparacao').catch(() => {});
     throw err;
   } finally {
     await browser.close();
   }
 }
 
-module.exports = { buscarPrecosCondor, ScraperError };
+module.exports = { pesquisarProdutos, compararPrecoEntreLojas, ScraperError };

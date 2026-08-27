@@ -1,31 +1,54 @@
 const express = require('express');
 const path = require('path');
-const { buscarPrecosCondor, ScraperError } = require('./src/scraper');
+const { pesquisarProdutos, compararPrecoEntreLojas, ScraperError } = require('./src/scraper');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const scraperOptions = () => ({
+  headless: process.env.HEADLESS !== '0',
+  debug: process.env.DEBUG === '1',
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/api/buscar', async (req, res) => {
-  const produto = String(req.query.produto || '').trim();
+app.get('/api/pesquisar', async (req, res) => {
+  const termo = String(req.query.termo || '').trim();
 
-  if (!produto) {
-    res.status(400).json({ erro: 'Informe o produto pesquisado (?produto=...).' });
+  if (!termo) {
+    res.status(400).json({ erro: 'Informe o termo pesquisado (?termo=...).' });
     return;
   }
 
   try {
-    const resultado = await buscarPrecosCondor(produto, {
-      headless: process.env.HEADLESS !== '0',
-      debug: process.env.DEBUG === '1',
-    });
+    const resultado = await pesquisarProdutos(termo, scraperOptions());
     res.json(resultado);
   } catch (err) {
-    console.error('Erro ao buscar no Condor:', err);
+    console.error('Erro ao pesquisar no Condor:', err);
     const status = err instanceof ScraperError ? 502 : 500;
     res.status(status).json({
-      erro: 'Não foi possível concluir a consulta no Condor.',
+      erro: 'Não foi possível pesquisar no Condor.',
+      detalhe: err.message,
+    });
+  }
+});
+
+app.get('/api/comparar', async (req, res) => {
+  const produto = String(req.query.produto || '').trim();
+
+  if (!produto) {
+    res.status(400).json({ erro: 'Informe o nome exato do produto (?produto=...).' });
+    return;
+  }
+
+  try {
+    const resultado = await compararPrecoEntreLojas(produto, scraperOptions());
+    res.json(resultado);
+  } catch (err) {
+    console.error('Erro ao comparar preços no Condor:', err);
+    const status = err instanceof ScraperError ? 502 : 500;
+    res.status(status).json({
+      erro: 'Não foi possível comparar os preços no Condor.',
       detalhe: err.message,
     });
   }

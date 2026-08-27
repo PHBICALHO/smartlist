@@ -23,8 +23,19 @@ npx playwright install chromium
 npm start
 ```
 
-Abra http://localhost:3000, digite um produto (ex: "arroz 5kg") e clique em
-Buscar. A busca demora um pouco (percorre todas as lojas de Curitiba).
+Abra http://localhost:3000 e a busca acontece em duas etapas:
+
+1. Digite um termo (ex: "arroz") e clique em Pesquisar — isso é rápido
+   (~5s) e mostra os produtos reais do catálogo do Condor que batem com o
+   termo, com nome, imagem e preço, pra você escolher o produto exato.
+2. Clique no produto desejado — aí sim o site troca de loja em loja
+   (~10 lojas de Curitiba) e refaz a busca por esse produto específico em
+   cada uma, o que leva 1 a 2 minutos.
+
+Separar em duas etapas existe porque produtos têm nomes bem específicos no
+catálogo do Condor (marca, peso, variação); pesquisar direto por um termo
+genérico e comparar "no escuro" arriscava comparar produtos diferentes entre
+lojas.
 
 ## Se der erro / não achar nada
 
@@ -49,14 +60,15 @@ seletores em `src/config.js`:
   Paraná e até Santa Catarina). O endereço retornado já inclui a cidade, então
   o filtro padrão (`"curitiba"`) costuma bastar.
 
-O scraper tenta casar o mesmo produto (por nome exato) em todas as lojas; se
-uma loja não tiver o produto exato, ele cai para o primeiro resultado da
-busca naquela loja como aproximação.
+Na etapa de comparação, o scraper busca pelo nome exato do produto
+escolhido em cada loja; se uma loja não tiver esse produto exato, ele cai
+para o primeiro resultado da busca naquela loja como aproximação (marcado
+como "produto aproximado" na tela).
 
 ## Estrutura
 
 ```
-server.js       -> servidor Express + endpoint /api/buscar
+server.js       -> servidor Express + endpoints /api/pesquisar e /api/comparar
 src/scraper.js  -> scraping com Playwright (Chromium headless)
 src/config.js   -> seletores e configurações ajustáveis
 public/         -> frontend (HTML/CSS/JS puro)
