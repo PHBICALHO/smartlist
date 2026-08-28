@@ -1,4 +1,4 @@
-# SmartList — Preço Condor Curitiba
+# SmartList — Preço mercados em curitiba
 
 Site simples que pesquisa um produto no [condor.com.br](https://www.condor.com.br)
 e mostra em qual loja Condor de Curitiba ele está mais barato.
