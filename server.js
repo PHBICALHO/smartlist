@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const { pesquisarProdutos, compararPrecoEntreLojas, ScraperError } = require('./src/scraper');
+const config = require('./src/config');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -8,6 +9,7 @@ const PORT = process.env.PORT || 3000;
 const scraperOptions = () => ({
   headless: process.env.HEADLESS !== '0',
   debug: process.env.DEBUG === '1',
+  concorrencia: process.env.CONCORRENCIA_LOJAS ? Number(process.env.CONCORRENCIA_LOJAS) : config.CONCORRENCIA_LOJAS,
 });
 
 app.use(express.static(path.join(__dirname, 'public')));

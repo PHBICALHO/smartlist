@@ -166,8 +166,17 @@ async function selecionarLoja(page, storeId) {
   await page.locator(`[data-store-id="${storeId}"]`).first().click();
   await page.waitForTimeout(300);
   await page.locator(config.STORE_CONFIRM_BUTTON_SELECTOR).first().click();
-  await page.waitForLoadState('networkidle').catch(() => {});
-  await page.waitForTimeout(800);
+
+  // Não usa waitForLoadState('networkidle') aqui: o site mantém conexões
+  // de fundo (chat, analytics) que impedem a rede de ficar "idle" de
+  // verdade, então isso quase sempre estourava o timeout de 30s por loja.
+  // Em vez disso, espera o modal fechar (sinal de que a troca foi aplicada).
+  await page
+    .locator(config.STORE_CONFIRM_BUTTON_SELECTOR)
+    .first()
+    .waitFor({ state: 'detached', timeout: 8000 })
+    .catch(() => {});
+  await page.waitForTimeout(500);
   await fecharPopups(page);
 }
 
@@ -180,13 +189,47 @@ function ehLojaDeCuritiba(nome, endereco) {
 
 async function abrirNavegador(headless) {
   const browser = await chromium.launch({ headless });
+  const { context, page } = await abrirAba(browser);
+  return { browser, page, context };
+}
+
+// Cria uma aba (context + page) nova a partir de um browser já aberto.
+// Cada loja usa a sua própria aba na comparação em paralelo, porque a loja
+// selecionada fica guardada em cookie/localStorage por context — usar a
+// mesma aba pra duas lojas ao mesmo tempo misturaria os resultados.
+async function abrirAba(browser) {
   const context = await browser.newContext({
     userAgent: config.USER_AGENT,
     viewport: { width: 1920, height: 1080 },
   });
   const page = await context.newPage();
   page.setDefaultTimeout(config.TIMEOUT_MS);
-  return { browser, page };
+  return { context, page };
+}
+
+// Roda `worker` para cada item de `itens`, no máximo `concorrencia` de cada
+// vez. Erros de um item não derrubam os outros — ficam de fora do array
+// final (com um aviso no console).
+async function processarComConcorrencia(itens, concorrencia, worker) {
+  const fila = [...itens];
+  const resultados = [];
+
+  async function trabalhador() {
+    while (fila.length > 0) {
+      const item = fila.shift();
+      if (!item) continue;
+      try {
+        const resultado = await worker(item);
+        if (resultado) resultados.push(resultado);
+      } catch (err) {
+        console.warn(`Falha processando "${item.nome || item}": ${err.message}`);
+      }
+    }
+  }
+
+  const trabalhadores = Array.from({ length: Math.min(concorrencia, itens.length) }, trabalhador);
+  await Promise.all(trabalhadores);
+  return resultados;
 }
 
 // Etapa 1: pesquisa o termo digitado pelo usuário e devolve a lista de
@@ -227,17 +270,29 @@ async function pesquisarProdutos(termo, options = {}) {
 // de pesquisarProdutos), percorre as lojas de Curitiba trocando a loja
 // selecionada e refazendo a busca, para comparar o preço em cada uma.
 async function compararPrecoEntreLojas(nomeProduto, options = {}) {
-  const { headless = true, debug = false } = options;
+  const { headless = true, debug = false, concorrencia = config.CONCORRENCIA_LOJAS } = options;
   const debugDir = path.join(__dirname, '..', 'debug');
-  const { browser, page } = await abrirNavegador(headless);
+
+  const browser = await chromium.launch({ headless });
 
   try {
-    await page.goto(config.BASE_URL, { waitUntil: 'domcontentloaded' });
-    await fecharPopups(page);
-    if (debug) await dumpDebug(page, debugDir, '01-home');
+    // Descobre a lista de lojas primeiro (precisa ser sequencial: só depois
+    // de saber quais são as lojas de Curitiba dá pra paralelizar).
+    const { context: contextInicial, page: pageInicial } = await abrirAba(browser);
+    let todasAsLojas;
+    try {
+      await pageInicial.goto(config.BASE_URL, { waitUntil: 'domcontentloaded' });
+      await fecharPopups(pageInicial);
+      if (debug) await dumpDebug(pageInicial, debugDir, '01-home');
 
-    const todasAsLojas = await listarLojas(page);
-    if (debug) await dumpDebug(page, debugDir, '02-lojas');
+      todasAsLojas = await listarLojas(pageInicial);
+      if (debug) await dumpDebug(pageInicial, debugDir, '02-lojas');
+    } catch (err) {
+      if (debug) await dumpDebug(pageInicial, debugDir, '99-erro-lojas').catch(() => {});
+      throw err;
+    } finally {
+      await contextInicial.close();
+    }
 
     const lojasCuritiba = todasAsLojas.filter((loja) => ehLojaDeCuritiba(loja.nome, loja.endereco));
     if (lojasCuritiba.length === 0) {
@@ -247,27 +302,38 @@ async function compararPrecoEntreLojas(nomeProduto, options = {}) {
       );
     }
 
-    const resultados = [];
+    // Cada loja roda na sua própria aba, em paralelo (limitado por
+    // `concorrencia`), em vez de trocar de loja e buscar uma de cada vez.
+    const resultados = await processarComConcorrencia(lojasCuritiba, concorrencia, async (loja) => {
+      const { context, page } = await abrirAba(browser);
+      try {
+        await page.goto(config.BASE_URL, { waitUntil: 'domcontentloaded' });
+        await fecharPopups(page);
 
-    for (const loja of lojasCuritiba) {
-      await selecionarLoja(page, loja.id);
+        await selecionarLoja(page, loja.id);
 
-      await preencherBusca(page, nomeProduto);
-      await page.waitForLoadState('domcontentloaded').catch(() => {});
-      await esperarProdutosCarregarem(page);
-      if (debug) await dumpDebug(page, debugDir, `03-busca-loja-${loja.id}`);
+        await preencherBusca(page, nomeProduto);
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await esperarProdutosCarregarem(page);
+        if (debug) await dumpDebug(page, debugDir, `03-busca-loja-${loja.id}`);
 
-      const item = await obterProdutoDaBusca(page, nomeProduto);
-      if (item) {
-        resultados.push({
+        const item = await obterProdutoDaBusca(page, nomeProduto);
+        if (!item) return null;
+
+        return {
           loja: loja.nome,
           endereco: loja.endereco,
           preco: item.preco,
           produtoEncontrado: item.nome,
           aproximado: item.aproximado,
-        });
+        };
+      } catch (err) {
+        if (debug) await dumpDebug(page, debugDir, `99-erro-loja-${loja.id}`).catch(() => {});
+        throw err;
+      } finally {
+        await context.close();
       }
-    }
+    });
 
     resultados.sort((a, b) => a.preco - b.preco);
 
@@ -276,9 +342,6 @@ async function compararPrecoEntreLojas(nomeProduto, options = {}) {
       lojas: resultados,
       maisBarato: resultados[0] || null,
     };
-  } catch (err) {
-    if (debug) await dumpDebug(page, debugDir, '99-erro-comparacao').catch(() => {});
-    throw err;
   } finally {
     await browser.close();
   }

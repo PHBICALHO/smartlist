@@ -16,6 +16,11 @@ module.exports = {
 
   TIMEOUT_MS: 30000,
 
+  // Quantas lojas o scraper processa em paralelo (abas separadas) durante a
+  // comparação de preços. Mais alto = mais rápido, mas mais carga no site
+  // do Condor de uma vez. 4 é um meio-termo razoável para uso pessoal.
+  CONCORRENCIA_LOJAS: 4,
+
   // Textos de botões/links de cookies, popups de CEP, newsletter etc.
   // que devem ser fechados/ignorados antes de continuar.
   DISMISS_BUTTON_PATTERNS: [
